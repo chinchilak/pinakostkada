@@ -60,7 +60,7 @@ def GameGrid():
     with solara.Card("Grid controls", style={"position":"absolute","top":"2vh","left":"10px"}):
         solara.Button("REFRESH", on_click=on_refresh, style={"border":"2px solid #ccc"})
 
-    with solara.Card("Player Selection", style={"position":"absolute","top":"22vh","left":"10px"}):
+    with solara.Card("Player Selection", style={"position":"absolute","top":"17vh","left":"10px"}):
         solara.ToggleButtonsSingle(value=player, values=list(PLAYER_COLORS.keys()), on_value=set_player, style={"border":"2px solid #ccc"})
         solara.Markdown(" ", style={"padding-top":"10px"})
         with solara.HBox():

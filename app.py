@@ -27,6 +27,59 @@ def random_grid(possible_values):
     selected = random.sample(possible_values, rows * cols)
     return [selected[i*cols:(i+1)*cols] for i in range(rows)]
 
+def count_adjacent_same_owner(owner_matrix, r, c, player):
+    count = 0
+    for dr in [-1, 0, 1]:
+        for dc in [-1, 0, 1]:
+            if dr == 0 and dc == 0:
+                continue  # Skip the center
+            nr, nc = r + dr, c + dc
+            if 0 <= nr < rows and 0 <= nc < cols:
+                if owner_matrix[nr][nc] == player:
+                    count += 1
+    return count
+
+def count_total_points(grid, owner_matrix):
+    p1_score = p2_score = 0
+    already_counted = set()
+    for r in range(rows):
+        for c in range(cols):
+            owner = owner_matrix[r][c]
+            if owner:
+                val = grid[r][c]
+                base_pts = dice_and_rule_values.get(val, 0)
+                if owner == "Player 1":
+                    p1_score += base_pts
+                else:
+                    p2_score += base_pts
+
+                # Only look up/left/up-left/up-right to avoid double-counting
+                for dr, dc in [(-1, 0), (0, -1), (-1, -1), (-1, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if 0 <= nr < rows and 0 <= nc < cols:
+                        if owner_matrix[nr][nc] == owner:
+                            # Make a tuple that represents the unordered pair
+                            pair = tuple(sorted([(r, c), (nr, nc)]))
+                            if pair not in already_counted:
+                                if owner == "Player 1":
+                                    p1_score += 1
+                                else:
+                                    p2_score += 1
+                                already_counted.add(pair)
+    return p1_score, p2_score
+
+def count_controlled_tiles(owner_matrix):
+    p1_tiles = 0
+    p2_tiles = 0
+    for row in owner_matrix:
+        for owner in row:
+            if owner == "Player 1":
+                p1_tiles += 1
+            elif owner == "Player 2":
+                p2_tiles += 1
+    return p1_tiles, p2_tiles
+
+
 # --- Main grid component ---
 @solara.component
 def GameGrid():
@@ -36,23 +89,25 @@ def GameGrid():
     owner_matrix, set_owner_matrix = solara.use_state(
         [[None for _ in range(cols)] for _ in range(rows)])
     
-    p1_score = p2_score = 0
-    for r in range(rows):
-        for c in range(cols):
-            owner = owner_matrix[r][c]
-            if owner:
-                val = grid[r][c]
-                pts = dice_and_rule_values.get(val, 0)
-                if owner == "Player 1":
-                    p1_score += pts
-                else:
-                    p2_score += pts
+    p1_score, p2_score = count_total_points(grid, owner_matrix)
+    p1_tiles, p2_tiles = count_controlled_tiles(owner_matrix)
+    p1_color = PLAYER_COLORS["Player 1"]
+    p2_color = PLAYER_COLORS["Player 2"]
     
     def on_refresh(_=None):
         set_grid(random_grid(possible_values))
         set_owner_matrix([[None]*cols for _ in range(rows)])
 
     def on_tile_click(r, c):
+        # Count current player's tiles
+        current_player = player  # "Player 1" or "Player 2"
+        p1_tiles, p2_tiles = count_controlled_tiles(owner_matrix)
+        player_tiles = p1_tiles if current_player == "Player 1" else p2_tiles
+
+        # Don't allow if already at 6 tiles
+        if owner_matrix[r][c] is None and player_tiles >= 6:
+            return  # Ignore click
+
         new = [list(row) for row in owner_matrix]
         new[r][c] = None if new[r][c] is not None else player
         set_owner_matrix(new)
@@ -60,15 +115,34 @@ def GameGrid():
     with solara.Card("Grid controls", style={"position":"absolute","top":"2vh","left":"10px"}):
         solara.Button("REFRESH", on_click=on_refresh, style={"border":"2px solid #ccc"})
 
-    with solara.Card("Player Selection", style={"position":"absolute","top":"17vh","left":"10px"}):
-        solara.ToggleButtonsSingle(value=player, values=list(PLAYER_COLORS.keys()), on_value=set_player, style={"border":"2px solid #ccc"})
+    with solara.Card(
+        "Player Selection",
+        style={
+            "position": "absolute",
+            "top": "17vh",
+            "left": "10px",
+            "background": PLAYER_COLORS[player],  # Set to current player's color
+            "color": "#fff",  # Make text white for contrast
+            "border": "2px solid #ccc",
+        }
+    ):
+        solara.ToggleButtonsSingle(
+            value=player,
+            values=list(PLAYER_COLORS.keys()),
+            on_value=set_player,
+            style={"border":"2px solid #fff"}  # white border for contrast
+        )
         solara.Markdown(" ", style={"padding-top":"10px"})
-        with solara.HBox():
-            solara.Markdown(f"{p1_score}", style={"font-size":"1.25vw", "fontWeight":"bold", "color":PLAYER_COLORS['Player 1']})
-            solara.Markdown(" ", style={"font-size":"1.25vw", "fontWeight":"bold"})
-            solara.Markdown(" ", style={"font-size":"1.25vw", "fontWeight":"bold"})
-            solara.Markdown(" ", style={"font-size":"1.25vw", "fontWeight":"bold"})
-            solara.Markdown(f"{p2_score}", style={"font-size":"1.25vw", "fontWeight":"bold", "color":PLAYER_COLORS['Player 2']})
+
+        with solara.GridFixed(columns=3):
+            solara.Markdown("Player 1", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
+            solara.Markdown(f"{p1_score}", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
+            solara.Markdown(f"({p1_tiles})", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
+
+            solara.Markdown("Player 2", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
+            solara.Markdown(f"{p2_score}", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
+            solara.Markdown(f"({p2_tiles})", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
+
 
     with solara.Column(style={"width":"98vw","height":"98vh","justifyContent":"center","alignItems":"center"}):
         with solara.GridFixed(columns=cols):

@@ -91,8 +91,7 @@ def GameGrid():
     
     p1_score, p2_score = count_total_points(grid, owner_matrix)
     p1_tiles, p2_tiles = count_controlled_tiles(owner_matrix)
-    p1_color = PLAYER_COLORS["Player 1"]
-    p2_color = PLAYER_COLORS["Player 2"]
+
     
     def on_refresh(_=None):
         set_grid(random_grid(possible_values))
@@ -112,18 +111,15 @@ def GameGrid():
         new[r][c] = None if new[r][c] is not None else player
         set_owner_matrix(new)
 
-    with solara.Card("Grid controls", style={"position":"absolute","top":"2vh","left":"10px"}):
-        solara.Button("REFRESH", on_click=on_refresh, style={"border":"2px solid #ccc"})
-
     with solara.Card(
         "Player Selection",
         style={
             "position": "absolute",
-            "top": "17vh",
+            "top": "10px",
             "left": "10px",
             "background": PLAYER_COLORS[player],  # Set to current player's color
             "color": "#fff",  # Make text white for contrast
-            "border": "2px solid #ccc",
+            "border": "2px solid #fff",
         }
     ):
         solara.ToggleButtonsSingle(
@@ -135,13 +131,13 @@ def GameGrid():
         solara.Markdown(" ", style={"padding-top":"10px"})
 
         with solara.GridFixed(columns=3):
-            solara.Markdown("Player 1", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
-            solara.Markdown(f"{p1_score}", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
-            solara.Markdown(f"({p1_tiles})", style={"font-size":"1vw", "fontWeight":"bold", "color": p1_color})
+            solara.Markdown("Player 1", style={"font-size":"1vw", "fontWeight":"bold"})
+            solara.Markdown(f"{p1_score}", style={"font-size":"1vw", "fontWeight":"bold"})
+            solara.Markdown(f"({p1_tiles})", style={"font-size":"1vw", "fontWeight":"bold"})
 
-            solara.Markdown("Player 2", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
-            solara.Markdown(f"{p2_score}", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
-            solara.Markdown(f"({p2_tiles})", style={"font-size":"1vw", "fontWeight":"bold", "color": p2_color})
+            solara.Markdown("Player 2", style={"font-size":"1vw", "fontWeight":"bold"})
+            solara.Markdown(f"{p2_score}", style={"font-size":"1vw", "fontWeight":"bold"})
+            solara.Markdown(f"({p2_tiles})", style={"font-size":"1vw", "fontWeight":"bold"})
 
 
     with solara.Column(style={"width":"98vw","height":"98vh","justifyContent":"center","alignItems":"center"}):
@@ -172,12 +168,11 @@ def GameGrid():
                             solara.Text(
                                 dice_string_to_faces(val),
                                 style={
-                                    "fontSize": "40pt" if is_dice_face(val) else "24pt",
+                                    "fontSize": "2vw" if is_dice_face(val) else "1vw",
                                     "color": "#333" if is_dice_face(val) else "#2b6bb5",
                                     "fontWeight": "normal" if is_dice_face(val) else "bold",
                                     "alignSelf": "flex-start",
-                                    "margin": "10px",
-                                    "lineHeight": "1em",
+                                    "margin": "10px"
                                },
                             ),
                             solara.Text(
@@ -190,8 +185,11 @@ def GameGrid():
                                     "background": "#fff",
                                     "border": "2px solid #888",
                                     "borderRadius": "50%",
-                                    "width": "2em", "height": "2em",
-                                    "display": "flex", "alignItems": "center", "justifyContent": "center",
+                                    "width": "2vw", 
+                                    "height": "2vw",
+                                    "display": "flex", 
+                                    "alignItems": "center", 
+                                    "justifyContent": "center",
                                 },
                             ),
                         ],

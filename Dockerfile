@@ -1,11 +1,13 @@
-FROM python:3.12-slim
+FROM python:3.12.11-slim
 
 WORKDIR /app
 
-COPY . .
+COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-EXPOSE 8765
+COPY . .
 
-CMD ["solara", "run", "app.py", "--host", "0.0.0.0", "--port", "8765"]
+EXPOSE 8080
+
+CMD ["python", "app.py"]

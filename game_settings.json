@@ -1,0 +1,12 @@
+{
+  "player_names": {
+    "Player 1": "Player 1",
+    "Player 2": "Player 2"
+  },
+  "player_colors": {
+    "Player 1": "#f08c53",
+    "Player 2": "#66e691"
+  },
+  "dice_font_scale": 1.2,
+  "text_font_scale": 0.9
+}

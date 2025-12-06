@@ -7,6 +7,8 @@
     "Player 1": "#f08c53",
     "Player 2": "#66e691"
   },
-  "dice_font_scale": 1.2,
-  "text_font_scale": 0.9
+  "dice_font_scale": 1.3,
+  "text_font_scale": 1.0,
+  "badge_scale": 0.8,
+  "badge_text_scale": 1.2
 }

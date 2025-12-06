@@ -3,61 +3,116 @@ import random
 import json
 import os
 
-from data import (
-    dice_and_rule_values, die_face,
-    PLAYER_COLORS,
-    TILE_COLORS,
-    rows, cols, cell_size,
-    DEFAULT_DICE_FONT_SCALE,
-    DEFAULT_TEXT_FONT_SCALE,
-)
-
 SETTINGS_FILE = "game_settings.json"
 
-# ------------- Persistent Settings Helpers ------------------
+# ----------------- Config load/save -------------------------
+
+DEFAULT_CONFIG = {
+    "player_names": {"Player 1": "Player 1", "Player 2": "Player 2"},
+    "player_colors": {"Player 1": "#f08c53", "Player 2": "#66e691"},
+    "tile_colors": {
+        "pair": "#d4edda",
+        "triple": "#d1ecf1",
+        "other": "#f8d7da",
+    },
+    "fonts": {
+        "dice_font_scale": 1.3,
+        "text_font_scale": 1.0,
+        "badge_scale": 1.0,
+        "badge_text_scale": 1.4,
+    },
+    "board": {
+        "rows": 4,
+        "cols": 4,
+        "cell_size": "min(22vw, 22vh)",
+    },
+}
 
 
-def load_settings(default_names, default_colors, default_dice_scale, default_text_scale):
+def _merge_config(data: dict, base: dict) -> dict:
+    """Recursively merge base defaults into data."""
+    result = dict(data) if isinstance(data, dict) else {}
+    for k, v in base.items():
+        if isinstance(v, dict):
+            result[k] = _merge_config(result.get(k, {}), v)
+        else:
+            result.setdefault(k, v)
+    return result
+
+
+def load_config() -> dict:
     if not os.path.exists(SETTINGS_FILE):
-        return default_names, default_colors, default_dice_scale, default_text_scale
-
+        return dict(DEFAULT_CONFIG)
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            raw = json.load(f)
     except Exception:
-        return default_names, default_colors, default_dice_scale, default_text_scale
-
-    names = data.get("player_names", {}) or {}
-    colors = data.get("player_colors", {}) or {}
-    dice_scale = data.get("dice_font_scale", default_dice_scale)
-    text_scale = data.get("text_font_scale", default_text_scale)
-
-    for k, v in default_names.items():
-        names.setdefault(k, v)
-    for k, v in default_colors.items():
-        colors.setdefault(k, v)
-
-    return names, colors, dice_scale, text_scale
+        return dict(DEFAULT_CONFIG)
+    return _merge_config(raw, DEFAULT_CONFIG)
 
 
-def save_settings(state):
-    data = {
-        "player_names": state.player_names,
-        "player_colors": state.player_colors,
-        "dice_font_scale": state.dice_font_scale,
-        "text_font_scale": state.text_font_scale,
-    }
+def save_config(cfg: dict) -> None:
     try:
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
     except Exception:
-        # silent fail is fine for this small tool
         pass
 
 
-# ----------------- Game Logic Utilities ---------------------
+config = load_config()
+
+# expose board globals for helper functions
+rows = config["board"]["rows"]
+cols = config["board"]["cols"]
+cell_size = config["board"]["cell_size"]
+
+# ----------------- Game logic constants ---------------------
+
+# dice-face unicode mapping
+die_face = {
+    "1": "\u2680",
+    "2": "\u2681",
+    "3": "\u2682",
+    "4": "\u2683",
+    "5": "\u2684",
+    "6": "\u2685",
+}
+
+# scoring/rules
+dice_and_rule_values = {
+    # Pairs
+    "1 1": 1,
+    "2 2": 1,
+    "3 3": 1,
+    "4 4": 1,
+    "5 5": 1,
+    "6 6": 1,
+    # Triplets
+    "1 1 1": 1,
+    "2 2 2": 1,
+    "3 3 3": 1,
+    "4 4 4": 1,
+    "5 5 5": 1,
+    "6 6 6": 1,
+    # Specials
+    "<= 9": 2,
+    ">= 26": 2,
+    "12 / 13 / 14": 2,
+    "21 / 22 / 23": 2,
+    "A A  B B": 2,
+    "A A A  B B": 3,
+    "A A A A": 3,
+    "A A A A A": 4,
+    "A B C D E": 3,
+    "A +1 +2 +3": 2,
+    "A +1 +2 +3 +4": 3,
+    "1, 3, 5": 2,
+    "2, 4, 6": 2,
+}
 
 possible_values = list(dice_and_rule_values.keys())
+
+# ----------------- Helper functions -------------------------
 
 
 def is_dice_face(value: str) -> bool:
@@ -69,13 +124,14 @@ def dice_string_to_faces(s: str) -> str:
 
 
 def card_bg_color(value: str) -> str:
+    colors = config["tile_colors"]
     if is_dice_face(value):
         parts = value.split()
         if len(parts) == 2:
-            return TILE_COLORS["pair"]
+            return colors["pair"]
         elif len(parts) == 3:
-            return TILE_COLORS["triple"]
-    return TILE_COLORS["other"]
+            return colors["triple"]
+    return colors["other"]
 
 
 def random_grid(values):
@@ -139,20 +195,17 @@ class GameState:
         self.win_reason = ""
         self.pending_last_turn_for = None  # who still gets a last turn due to 21+ rule
 
-        defaults_names = {"Player 1": "Player 1", "Player 2": "Player 2"}
-        defaults_colors = dict(PLAYER_COLORS)
+        # history stack for undo
+        self.history: list[dict] = []
 
-        (
-            self.player_names,
-            self.player_colors,
-            self.dice_font_scale,
-            self.text_font_scale,
-        ) = load_settings(
-            defaults_names,
-            defaults_colors,
-            DEFAULT_DICE_FONT_SCALE,
-            DEFAULT_TEXT_FONT_SCALE,
-        )
+        # settings from config
+        self.player_names = dict(config["player_names"])
+        self.player_colors = dict(config["player_colors"])
+        # tile colors stay in config; we just read from there for backgrounds
+        self.dice_font_scale = config["fonts"]["dice_font_scale"]
+        self.text_font_scale = config["fonts"]["text_font_scale"]
+        self.badge_scale = config["fonts"]["badge_scale"]
+        self.badge_text_scale = config["fonts"]["badge_text_scale"]
 
     # ---- core operations ----
 
@@ -165,6 +218,34 @@ class GameState:
         self.winner = None
         self.win_reason = ""
         self.pending_last_turn_for = None
+        self.history.clear()
+
+    def _save_snapshot(self):
+        """Save current state so we can undo the last full turn."""
+        self.history.append(
+            {
+                "owner": [row[:] for row in self.owner],
+                "rounds": dict(self.rounds),
+                "player": self.player,
+                "game_over": self.game_over,
+                "winner": self.winner,
+                "win_reason": self.win_reason,
+                "pending_last_turn_for": self.pending_last_turn_for,
+            }
+        )
+
+    def undo_last(self):
+        """Undo the last completed turn (place or pass)."""
+        if not self.history:
+            return
+        snap = self.history.pop()
+        self.owner = [row[:] for row in snap["owner"]]
+        self.rounds = dict(snap["rounds"])
+        self.player = snap["player"]
+        self.game_over = snap["game_over"]
+        self.winner = snap["winner"]
+        self.win_reason = snap["win_reason"]
+        self.pending_last_turn_for = snap["pending_last_turn_for"]
 
     def _has_four_in_line(self, player: str) -> bool:
         directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
@@ -172,9 +253,11 @@ class GameState:
             for c in range(cols):
                 if self.owner[r][c] != player:
                     continue
+                for k in range(1, 4):  # need 3 more = total 4
+                    nr, nc = r + directions[0][0] * 0, c + directions[0][1] * 0
                 for dr, dc in directions:
                     ok = True
-                    for k in range(1, 4):  # need 3 more = total 4
+                    for k in range(1, 4):
                         nr, nc = r + dr * k, c + dc * k
                         if not (0 <= nr < rows and 0 <= nc < cols):
                             ok = False
@@ -257,22 +340,13 @@ class GameState:
     def _can_player_act(self, player: str) -> bool:
         if self.game_over:
             return False
-        # If a "last turn" is pending for someone, only that player may act
         if self.pending_last_turn_for and player != self.pending_last_turn_for:
             return False
-        # no more than 6 rounds per player
         if self.rounds[player] >= 6:
             return False
         return True
 
     def play(self, r, c) -> str:
-        """
-        Called when current player clicks a tile.
-        Returns:
-          'placed'  -> tile placed, round counted
-          'removed' -> own tile removed
-          'blocked' -> illegal
-        """
         current = self.player
 
         if not self._can_player_act(current):
@@ -280,29 +354,27 @@ class GameState:
 
         owner = self.owner[r][c]
 
-        # own tile: allow removing without ending the round
         if owner == current:
             self.owner[r][c] = None
             return "removed"
 
-        # opponent tile: cannot change
         if owner is not None and owner != current:
             return "blocked"
 
-        # empty tile: place and finish the round
         if owner is None:
+            self._save_snapshot()
             self.owner[r][c] = current
-            self.rounds[current] += 1   # this is a full round
+            self.rounds[current] += 1
             self._after_turn(current)
             return "placed"
 
         return "blocked"
 
     def pass_turn(self):
-        """Player chooses to pass: counts as a round without placing."""
         current = self.player
         if not self._can_player_act(current):
             return
+        self._save_snapshot()
         self.rounds[current] += 1
         self._after_turn(current)
 
@@ -384,9 +456,7 @@ def show_game_over():
             "🤝 It's a tie!</div>"
         )
 
-    reason_html = (
-        f"Reason: {game.win_reason}" if game.win_reason else ""
-    )
+    reason_html = f"Reason: {game.win_reason}" if game.win_reason else ""
     go_detail.set_content(
         f"<div style='font-size:1.2em; font-weight:bold; "
         f"text-shadow:1px 1px 2px rgba(0,0,0,0.4); margin-bottom:12px;'>{reason_html}</div>"
@@ -400,14 +470,15 @@ def show_game_over():
 with ui.dialog() as setup_dialog, ui.card().style("min-width: 360px;"):
     ui.markdown("### ⚙ Game Setup")
 
-    # player name + color rows with reliable on_change saving
+    # player name + color rows
     for p in ["Player 1", "Player 2"]:
         with ui.row().style("align-items:center; gap:8px; margin-bottom:6px;"):
             ui.label(p).style("width:80px;font-weight:bold;")
 
             def handle_name_change(e, player=p):
                 game.player_names[player] = e.value
-                save_settings(game)
+                config["player_names"][player] = e.value
+                save_config(config)
                 refresh_ui()
 
             ui.input(
@@ -417,7 +488,8 @@ with ui.dialog() as setup_dialog, ui.card().style("min-width: 360px;"):
 
             def handle_color_change(e, player=p):
                 game.player_colors[player] = e.value
-                save_settings(game)
+                config["player_colors"][player] = e.value
+                save_config(config)
                 refresh_ui()
 
             ui.color_input(
@@ -427,32 +499,68 @@ with ui.dialog() as setup_dialog, ui.card().style("min-width: 360px;"):
 
     ui.separator()
 
+    # DICE SIZE SLIDER
     ui.label("Dice size")
     def on_dice_size_change(e):
         game.dice_font_scale = e.value
-        save_settings(game)
+        config["fonts"]["dice_font_scale"] = e.value
+        save_config(config)
         refresh_ui()
 
     ui.slider(
         min=0.7,
-        max=1.8,
+        max=4.0,
         step=0.1,
         value=game.dice_font_scale,
         on_change=on_dice_size_change,
     ).props("label-always")
 
+    # TEXT SIZE SLIDER
     ui.label("Text size")
     def on_text_size_change(e):
         game.text_font_scale = e.value
-        save_settings(game)
+        config["fonts"]["text_font_scale"] = e.value
+        save_config(config)
         refresh_ui()
 
     ui.slider(
         min=0.7,
-        max=1.8,
+        max=4.0,
         step=0.1,
         value=game.text_font_scale,
         on_change=on_text_size_change,
+    ).props("label-always")
+
+    # BADGE SIZE SLIDER
+    ui.label("Badge size")
+    def on_badge_change(e):
+        game.badge_scale = e.value
+        config["fonts"]["badge_scale"] = e.value
+        save_config(config)
+        refresh_ui()
+
+    ui.slider(
+        min=0.5,
+        max=4.0,
+        step=0.1,
+        value=game.badge_scale,
+        on_change=on_badge_change,
+    ).props("label-always")
+
+    # BADGE TEXT SIZE SLIDER
+    ui.label("Badge text size")
+    def on_badge_text_change(e):
+        game.badge_text_scale = e.value
+        config["fonts"]["badge_text_scale"] = e.value
+        save_config(config)
+        refresh_ui()
+
+    ui.slider(
+        min=0.5,
+        max=4.0,
+        step=0.1,
+        value=game.badge_text_scale,
+        on_change=on_badge_text_change,
     ).props("label-always")
 
     ui.separator()
@@ -477,7 +585,7 @@ def render_player(player: str):
     name = game.player_names[player]
     color = game.player_colors[player]
 
-    active = player == game.player and not game.game_over
+    active = player == game.player
 
     border = "#FFFFFF" if active else "#000000"
     glow = "0 0 18px rgba(255,255,255,0.9)" if active else "none"
@@ -501,11 +609,11 @@ def render_player(player: str):
 
         ui.separator()
 
-        with ui.column().style("align-items:center; margin-top:8px; gap:6px;"):
+        with ui.column().style("align-items:center; margin-top:8px; gap:10px;"):
 
             def stat_row(label, value):
                 with ui.row().style(
-                    "width:170px; justify-content:space-between; font-size:1.1em; padding:2px 0;"
+                    "width:190px; justify-content:space-between; font-size:1.35em; padding:4px 0;"
                 ):
                     ui.html(
                         f"<span style='font-weight:bold; text-shadow:2px 2px 4px rgba(0,0,0,0.8);'>{label}</span>",
@@ -517,18 +625,42 @@ def render_player(player: str):
                     )
 
             stat_row("Points:", score)
-            stat_row("Rounds:", f"{rounds} ({tiles})")
+            stat_row("Rounds:", rounds)
+            stat_row("Tiles:", tiles)
 
-        if active and not game.game_over:
-            def do_pass():
-                game.pass_turn()
-                refresh_ui()
-                if game.game_over:
-                    show_game_over()
+        if active:
+            with ui.row().style(
+                "margin-top:12px; width:100%; display:flex; justify-content:space-between;"
+            ):
+                # Pass on the left (if game not over)
+                if not game.game_over:
+                    def do_pass():
+                        game.pass_turn()
+                        refresh_ui()
+                        if game.game_over:
+                            show_game_over()
 
-            ui.button("Pass", on_click=do_pass).style(
-                "margin-top:12px; font-weight:bold;"
-            )
+                    ui.button("Pass", on_click=do_pass).style(
+                        "font-weight:bold; min-width:80px;"
+                    )
+                else:
+                    ui.label("").style("width:80px;")
+
+                # Undo on the right (if history exists)
+                if game.history:
+                    def do_undo():
+                        game.undo_last()
+                        try:
+                            game_over_dialog.close()
+                        except Exception:
+                            pass
+                        refresh_ui()
+
+                    ui.button("Undo", on_click=do_undo).style(
+                        "font-weight:bold; min-width:80px;"
+                    )
+                else:
+                    ui.label("").style("width:80px;")
 
 
 @ui.refreshable
@@ -548,8 +680,8 @@ def right_panel():
 def board():
     dice_fs = f"{1.4 * game.dice_font_scale}vw"
     text_fs = f"{1.4 * game.text_font_scale}vw"
-    badge_size = f"{2 * game.text_font_scale}vw"
-    pts_fs = f"{0.9 * game.text_font_scale}vw"
+    badge_size = f"{2.4 * game.badge_scale}vw"
+    pts_fs = f"{1.4 * game.badge_text_scale}vw"
 
     with ui.column().classes("items-center").style("gap:8px;"):
         with ui.grid(columns=cols).style("gap:4px;"):
@@ -559,7 +691,11 @@ def board():
                     pts = dice_and_rule_values.get(v, 0)
                     owner = game.owner[r][c]
 
-                    bg = game.player_colors.get(owner, card_bg_color(v)) if owner else card_bg_color(v)
+                    bg = (
+                        game.player_colors.get(owner, card_bg_color(v))
+                        if owner
+                        else card_bg_color(v)
+                    )
 
                     def click(row=r, col=c):
                         if game.game_over:
@@ -569,10 +705,14 @@ def board():
                         if game.game_over:
                             show_game_over()
 
-                    tile = ui.element("div").style(
-                        f"background:{bg}; width:{cell_size}; height:{cell_size}; "
-                        "border:2px solid white; border-radius:10px; position:relative; cursor:pointer;"
-                    ).on("click", click)
+                    tile = (
+                        ui.element("div")
+                        .style(
+                            f"background:{bg}; width:{cell_size}; height:{cell_size}; "
+                            "border:2px solid white; border-radius:10px; position:relative; cursor:pointer;"
+                        )
+                        .on("click", click)
+                    )
 
                     with tile:
                         fs = dice_fs if is_dice_face(v) else text_fs
@@ -584,7 +724,9 @@ def board():
                             "background:white; border-radius:50%; border:2px solid grey; "
                             "display:flex;align-items:center;justify-content:center;"
                         ):
-                            ui.label(str(pts)).style(f"font-size:{pts_fs}; font-weight:bold;")
+                            ui.label(str(pts)).style(
+                                f"font-size:{pts_fs}; font-weight:bold;"
+                            )
 
         ui.button("⚙ Setup", on_click=setup_dialog.open).props("flat dense")
 
@@ -594,11 +736,11 @@ def board():
 with ui.column().classes("items-center").style(
     "width:100%; min-height:100vh; justify-content:center;"
 ):
-    with ui.row().classes("items-center justify-center").style(
+    with ui.row().classes("items-start justify-center").style(
         "gap:24px; max-width:90vw; margin:auto;"
     ):
         left_panel()
         board()
         right_panel()
 
-ui.run(host='0.0.0.0', port=8080)
+ui.run(host="0.0.0.0", port=8080)
